@@ -1,0 +1,4 @@
+0.1.0
+------
+handle jpeg and orientation better
+handle size of output
