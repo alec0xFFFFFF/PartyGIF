@@ -5,4 +5,4 @@ From this
 
 To this
 
-![Alt Text](assets/party_gator.gif)
+![Alt Text](assets/gator.gif)
