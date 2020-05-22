@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 import textwrap
 from math import ceil
 import zipfile
+import tempfile
 
 
 def expand2square(pil_img, background_color):
@@ -61,6 +62,30 @@ def create_scroller_image(output_image_path, output_images, width):
     long_image.save(output_image_path)
 
 
+def draw_ellipse(image, bounds, width=1, fill='red', outline='red', antialias=4):
+    """Improved ellipse drawing function, based on PIL.ImageDraw."""
+    # https://stackoverflow.com/questions/32504246/draw-ellipse-in-python-pil-with-line-thickness
+    # Use a single channel image (mode='L') as mask.
+    # The size of the mask can be increased relative to the imput image
+    # to get smoother looking results.
+    mask = Image.new(
+        size=[int(dim * antialias) for dim in image.size],
+        mode='L', color='red')
+    draw = ImageDraw.Draw(mask)
+
+    # draw outer shape in white (color) and inner shape in black (transparent)
+    for offset, fill in (width/-2.0, 'white'), (width/2.0, 'black'):
+        left, top = [(value + offset) * antialias for value in bounds[:2]]
+        right, bottom = [(value - offset) * antialias for value in bounds[2:]]
+        draw.ellipse([left, top, right, bottom], fill=fill)
+
+    # downsample the mask using PIL.Image.LANCZOS
+    # (a high-quality downsampling filter).
+    mask = mask.resize(image.size, Image.LANCZOS)
+    # paste outline color to input image through the mask
+    image.paste(outline, mask=mask)
+
+
 def create_all_view_image(output_image_path, output_images, single_image_width, numbered_labels=True):
     # add numbers
     if output_images.__len__() % 2 == 1:
@@ -86,6 +111,8 @@ def create_all_view_image(output_image_path, output_images, single_image_width, 
                                        (single_image_width * x) + (offset + diameter), ((i % 2) * single_image_width) + (offset + diameter))
 
             num = str(i)
+            # todo fix drawing circle
+            # draw_ellipse(im, draw_circle_coordinates, width=10, antialias=8)
             draw.ellipse(draw_circle_coordinates, outline='red', fill='red')
             font = ImageFont.truetype('/Library/Fonts/TitilliumWeb-Bold.ttf', 40)
             ascent, descent = font.getmetrics()
@@ -130,12 +157,8 @@ def create_result_medias(input_path, output_path, width, height):
     file_items = get_ordered_tasks(input_path)
     media_output_path = output_path+'/media'
 
-    # todo temp files instead
-    item_output_path = output_path + '/output'
-
     for res_dir_file_path, i in file_items:
         files = get_ordered_responses(res_dir_file_path)
-        os.makedirs(item_output_path, exist_ok=True)
         output_images = list()
 
         for j, submission in enumerate(files):
@@ -143,21 +166,21 @@ def create_result_medias(input_path, output_path, width, height):
                 # create_title card that is used with each gif
                 with open(submission[2], 'rt') as text_file:
                     title_msg = 'The Gang Draws: {}'.format(text_file.read())
-                title_card_path = '{}/title.png'.format(item_output_path)
+                title_card_path = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
                 create_text_image(title_card_path, title_msg, width, height)
-                output_images.append(title_card_path)
+                output_images.append(title_card_path.name)
             else:
                 if submission[1][:4] == 'text':
                     with open(submission[2], 'rt') as text_file:
                         # first one "the gang draws"
                         msg = text_file.read()
-                    text_image_path = '{}/{}.png'.format(item_output_path, submission[0])
+                    text_image_path = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
                     create_text_image(text_image_path, msg, width, height)
-                    output_images.append(text_image_path)
+                    output_images.append(text_image_path.name)
                 else:
-                    output_image_path = '{}/{}.png'.format(item_output_path, submission[0])
+                    output_image_path = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
                     resize_and_center_image_in_frame(output_image_path, submission[2], width, height)
-                    output_images.append(output_image_path)
+                    output_images.append(output_image_path.name)
 
         os.makedirs(media_output_path, exist_ok=True)
         write_gif(output_images, '{}/{}_motion'.format(media_output_path, i), 3)
@@ -165,6 +188,8 @@ def create_result_medias(input_path, output_path, width, height):
         create_scroller_image('{}/{}_scroller.png'.format(media_output_path, i), output_images, width)
 
         create_all_view_image('{}/{}_all_view.png'.format(media_output_path, i), output_images, width)
+        for temp_file in output_images:
+            os.unlink(temp_file)
 
         # todo keep images in memory?
         # todo put names on images?
